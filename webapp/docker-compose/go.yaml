@@ -16,6 +16,18 @@ services:
     ports:
       - "3306:3306"
 
+  mongodb:
+    image: mongo:4.4
+    volumes:
+      - ../mongodb/db:/csvfiles
+      - ../mongodb/db:/docker-entrypoint-initdb.d
+    environment:
+      MONGO_INITDB_DATABASE: isuumo
+      MONGO_INITDB_ROOT_USERNAME: isucon
+      MONGO_INITDB_ROOT_PASSWORD: isucon
+    ports:
+      - "27017:27017"
+
   api-server:
     build: ../go
     entrypoint:
@@ -23,7 +35,7 @@ services:
       - -timeout
       - 60s
       - -wait
-      - tcp://mysql:3306
+      - tcp://mongodb:27017
     volumes:
       - ../mysql/db:/go/src/mysql/db
       - ../fixture:/go/src/fixture
@@ -32,11 +44,16 @@ services:
       MYSQL_USER: isucon
       MYSQL_PASS: isucon
       MYSQL_HOST: mysql
+      MONGO_DBNAME: isuumo
+      MONGO_USER: isucon
+      MONGO_PASS: isucon
+      MONGO_HOST: mongodb
       SERVER_PORT: 1323
     ports:
       - "1323:1323"
     depends_on:
       - mysql
+      - mongodb
     command: /go/src/isuumo/isuumo
 
   frontend:
@@ -47,10 +64,10 @@ services:
   nginx:
     build: ../nginx
     volumes:
-        - ../../provisioning/ansible/roles/web-bootstrap/files/nginx.conf.template:/etc/nginx/nginx.conf.template
-        - ../logs/nginx:/var/log/nginx
-        - ../nginx/conf.d:/etc/nginx/conf.d
-        - ../nginx/out:/www/data
+      - ../../provisioning/ansible/roles/web-bootstrap/files/nginx.conf.template:/etc/nginx/nginx.conf.template
+      - ../logs/nginx:/var/log/nginx
+      - ../nginx/conf.d:/etc/nginx/conf.d
+      - ../nginx/out:/www/data
     ports:
       - "8080:80"
     entrypoint:
