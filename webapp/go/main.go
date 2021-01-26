@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -18,6 +19,10 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const Limit = 20
@@ -27,6 +32,8 @@ var db *sqlx.DB
 var mySQLConnectionData *MySQLConnectionEnv
 var chairSearchCondition ChairSearchCondition
 var estateSearchCondition EstateSearchCondition
+
+var mongodb *mongo.Database
 
 type InitializeResponse struct {
 	Language string `json:"language"`
@@ -278,6 +285,21 @@ func main() {
 	}
 	db.SetMaxOpenConns(10)
 	defer db.Close()
+
+	credential := options.Credential{
+		Username: getEnv("MONGO_USER", "isucon"),
+		Password: getEnv("MONGO_PASS", "isucon"),
+	}
+	mongouri := "mongodb://" + getEnv("MONGO_HOST", "localhost") + ":27017"
+	clientOpts := options.Client().ApplyURI(mongouri).SetAuth(credential)
+
+	client, err := mongo.Connect(context.Background(), clientOpts)
+	if err != nil {
+		e.Logger.Fatalf("DB connection failed : %v", err)
+	}
+	defer client.Disconnect(context.Background())
+
+	mongodb = client.Database("isuumo")
 
 	// Start server
 	serverPort := fmt.Sprintf(":%v", getEnv("SERVER_PORT", "1323"))
