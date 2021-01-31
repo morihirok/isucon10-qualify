@@ -40,19 +40,19 @@ type InitializeResponse struct {
 }
 
 type Chair struct {
-	ID          int64  `db:"id" json:"id"`
-	Name        string `db:"name" json:"name"`
-	Description string `db:"description" json:"description"`
-	Thumbnail   string `db:"thumbnail" json:"thumbnail"`
-	Price       int64  `db:"price" json:"price"`
-	Height      int64  `db:"height" json:"height"`
-	Width       int64  `db:"width" json:"width"`
-	Depth       int64  `db:"depth" json:"depth"`
-	Color       string `db:"color" json:"color"`
-	Features    string `db:"features" json:"features"`
-	Kind        string `db:"kind" json:"kind"`
-	Popularity  int64  `db:"popularity" json:"-"`
-	Stock       int64  `db:"stock" json:"-"`
+	ID          int64  `db:"id" json:"id" bson:"_id"`
+	Name        string `db:"name" json:"name" bson:"name"`
+	Description string `db:"description" json:"description" bson:"description"`
+	Thumbnail   string `db:"thumbnail" json:"thumbnail" bson:"thumbnail"`
+	Price       int64  `db:"price" json:"price" bson:"price"`
+	Height      int64  `db:"height" json:"height" bson:"height"`
+	Width       int64  `db:"width" json:"width" bson:"width"`
+	Depth       int64  `db:"depth" json:"depth" bson:"depth"`
+	Color       string `db:"color" json:"color" bson:"color"`
+	Features    string `db:"features" json:"features" bson:"features"`
+	Kind        string `db:"kind" json:"kind" bson:"kind"`
+	Popularity  int64  `db:"popularity" json:"-" bson:"popularity"`
+	Stock       int64  `db:"stock" json:"-" bson:"stock"`
 }
 
 type ChairSearchResponse struct {
@@ -343,10 +343,9 @@ func getChairDetail(c echo.Context) error {
 	}
 
 	chair := Chair{}
-	query := `SELECT * FROM chair WHERE id = ?`
-	err = db.Get(&chair, query, id)
+	err = mongodb.Collection("chair").FindOne(context.Background(), bson.M{"_id": id}).Decode(&chair)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			c.Echo().Logger.Infof("requested id's chair not found : %v", id)
 			return c.NoContent(http.StatusNotFound)
 		}
