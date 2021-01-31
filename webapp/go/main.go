@@ -66,18 +66,18 @@ type ChairListResponse struct {
 
 //Estate 物件
 type Estate struct {
-	ID          int64   `db:"id" json:"id"`
-	Thumbnail   string  `db:"thumbnail" json:"thumbnail"`
-	Name        string  `db:"name" json:"name"`
-	Description string  `db:"description" json:"description"`
-	Latitude    float64 `db:"latitude" json:"latitude"`
-	Longitude   float64 `db:"longitude" json:"longitude"`
-	Address     string  `db:"address" json:"address"`
-	Rent        int64   `db:"rent" json:"rent"`
-	DoorHeight  int64   `db:"door_height" json:"doorHeight"`
-	DoorWidth   int64   `db:"door_width" json:"doorWidth"`
-	Features    string  `db:"features" json:"features"`
-	Popularity  int64   `db:"popularity" json:"-"`
+	ID          int64   `db:"id" json:"id" bson:"_id"`
+	Thumbnail   string  `db:"thumbnail" json:"thumbnail" bson:"thumbnail"`
+	Name        string  `db:"name" json:"name" bson:"name"`
+	Description string  `db:"description" json:"description" bson:"description"`
+	Latitude    float64 `db:"latitude" json:"latitude" bson:"latitude"`
+	Longitude   float64 `db:"longitude" json:"longitude" bson:"longitude"`
+	Address     string  `db:"address" json:"address" bson:"address"`
+	Rent        int64   `db:"rent" json:"rent" bson:"rent"`
+	DoorHeight  int64   `db:"door_height" json:"doorHeight" bson:"door_height"`
+	DoorWidth   int64   `db:"door_width" json:"doorWidth" bson:"door_width"`
+	Features    string  `db:"features" json:"features" json:"features"`
+	Popularity  int64   `db:"popularity" json:"-" bson:"popularity"`
 }
 
 //EstateSearchResponse estate/searchへのレスポンスの形式
@@ -632,9 +632,9 @@ func getEstateDetail(c echo.Context) error {
 	}
 
 	var estate Estate
-	err = db.Get(&estate, "SELECT * FROM estate WHERE id = ?", id)
+	err = mongodb.Collection("estate").FindOne(context.Background(), bson.M{"_id": id}).Decode(&estate)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			c.Echo().Logger.Infof("getEstateDetail estate id %v not found", id)
 			return c.NoContent(http.StatusNotFound)
 		}
