@@ -609,15 +609,27 @@ func getChairSearchCondition(c echo.Context) error {
 
 func getLowPricedChair(c echo.Context) error {
 	var chairs []Chair
-	query := `SELECT * FROM chair WHERE stock > 0 ORDER BY price ASC, id ASC LIMIT ?`
-	err := db.Select(&chairs, query, Limit)
+	findOptions := options.Find().SetSort(bson.D{{"_id", 1}}).SetSort(bson.D{{"price", 1}}).SetLimit(Limit)
+	query := bson.D{{"stock", bson.D{{"$gt", 0}}}}
+	cur, err := mongodb.Collection("chair").Find(context.Background(), query, findOptions)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			c.Logger().Error("getLowPricedChair not found")
 			return c.JSON(http.StatusOK, ChairListResponse{[]Chair{}})
 		}
 		c.Logger().Errorf("getLowPricedChair DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for cur.Next(context.TODO()) {
+		var chair Chair
+		err := cur.Decode(&chair)
+		if err != nil {
+			c.Logger().Errorf("getLowPricedChair DB decode error : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		chairs = append(chairs, chair)
 	}
 
 	return c.JSON(http.StatusOK, ChairListResponse{Chairs: chairs})
