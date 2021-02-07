@@ -833,15 +833,26 @@ func searchEstates(c echo.Context) error {
 
 func getLowPricedEstate(c echo.Context) error {
 	estates := make([]Estate, 0, Limit)
-	query := `SELECT * FROM estate ORDER BY rent ASC, id ASC LIMIT ?`
-	err := db.Select(&estates, query, Limit)
+	findOptions := options.Find().SetSort(bson.D{{"_id", 1}}).SetSort(bson.D{{"rent", 1}}).SetLimit(Limit)
+	cur, err := mongodb.Collection("estate").Find(context.Background(), bson.D{{}}, findOptions)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			c.Logger().Error("getLowPricedEstate not found")
 			return c.JSON(http.StatusOK, EstateListResponse{[]Estate{}})
 		}
 		c.Logger().Errorf("getLowPricedEstate DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for cur.Next(context.TODO()) {
+		var estate Estate
+		err := cur.Decode(&estate)
+		if err != nil {
+			c.Logger().Errorf("getLowPricedEstate DB decode error : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		estates = append(estates, estate)
 	}
 
 	return c.JSON(http.StatusOK, EstateListResponse{Estates: estates})
