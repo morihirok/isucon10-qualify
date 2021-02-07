@@ -609,7 +609,7 @@ func getChairSearchCondition(c echo.Context) error {
 
 func getLowPricedChair(c echo.Context) error {
 	var chairs []Chair
-	findOptions := options.Find().SetSort(bson.D{{"_id", 1}}).SetSort(bson.D{{"price", 1}}).SetLimit(Limit)
+	findOptions := options.Find().SetSort(bson.D{{"price", 1}, {"_id", 1}}).SetLimit(Limit)
 	query := bson.D{{"stock", bson.D{{"$gt", 0}}}}
 	cur, err := mongodb.Collection("chair").Find(context.Background(), query, findOptions)
 	if err != nil {
@@ -833,7 +833,7 @@ func searchEstates(c echo.Context) error {
 
 func getLowPricedEstate(c echo.Context) error {
 	estates := make([]Estate, 0, Limit)
-	findOptions := options.Find().SetSort(bson.D{{"_id", 1}}).SetSort(bson.D{{"rent", 1}}).SetLimit(Limit)
+	findOptions := options.Find().SetSort(bson.D{{"rent", 1}, {"_id", 1}}).SetLimit(Limit)
 	cur, err := mongodb.Collection("estate").Find(context.Background(), bson.D{{}}, findOptions)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
