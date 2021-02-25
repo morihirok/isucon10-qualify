@@ -866,10 +866,9 @@ func searchRecommendedEstateWithChair(c echo.Context) error {
 	}
 
 	chair := Chair{}
-	query := `SELECT * FROM chair WHERE id = ?`
-	err = db.Get(&chair, query, id)
+	err = mongodb.Collection("chair").FindOne(context.Background(), bson.M{"_id": id}).Decode(&chair)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			c.Logger().Infof("Requested chair id \"%v\" not found", id)
 			return c.NoContent(http.StatusBadRequest)
 		}
@@ -881,14 +880,53 @@ func searchRecommendedEstateWithChair(c echo.Context) error {
 	w := chair.Width
 	h := chair.Height
 	d := chair.Depth
-	query = `SELECT * FROM estate WHERE (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) OR (door_width >= ? AND door_height >= ?) ORDER BY popularity DESC, id ASC LIMIT ?`
-	err = db.Select(&estates, query, w, h, w, d, h, w, h, d, d, w, d, h, Limit)
+	query := bson.D{
+		{"$or", bson.A{
+			bson.M{"$and": bson.A{
+				bson.M{"door_width": bson.M{"$gte": w}},
+				bson.M{"door_height": bson.M{"$gte": h}},
+			}},
+			bson.M{"$and": bson.A{
+				bson.M{"door_width": bson.M{"$gte": w}},
+				bson.M{"door_height": bson.M{"$gte": d}},
+			}},
+			bson.M{"$and": bson.A{
+				bson.M{"door_width": bson.M{"$gte": h}},
+				bson.M{"door_height": bson.M{"$gte": w}},
+			}},
+			bson.M{"$and": bson.A{
+				bson.M{"door_width": bson.M{"$gte": h}},
+				bson.M{"door_height": bson.M{"$gte": d}},
+			}},
+			bson.M{"$and": bson.A{
+				bson.M{"door_width": bson.M{"$gte": d}},
+				bson.M{"door_height": bson.M{"$gte": w}},
+			}},
+			bson.M{"$and": bson.A{
+				bson.M{"door_width": bson.M{"$gte": d}},
+				bson.M{"door_height": bson.M{"$gte": h}},
+			}},
+		}},
+	}
+	findOptions := options.Find().SetSort(bson.D{{"popularity", -1}, {"_id", 1}}).SetLimit(Limit)
+	cur, err := mongodb.Collection("estate").Find(context.Background(), query, findOptions)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			return c.JSON(http.StatusOK, EstateListResponse{[]Estate{}})
 		}
 		c.Logger().Errorf("Database execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for cur.Next(context.TODO()) {
+		var estate Estate
+		err := cur.Decode(&estate)
+		if err != nil {
+			c.Logger().Errorf("getLowPricedEstate DB decode error : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		estates = append(estates, estate)
 	}
 
 	return c.JSON(http.StatusOK, EstateListResponse{Estates: estates})
