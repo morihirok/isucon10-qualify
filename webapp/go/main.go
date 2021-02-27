@@ -416,8 +416,7 @@ func postChair(c echo.Context) error {
 }
 
 func searchChairs(c echo.Context) error {
-	conditions := make([]string, 0)
-	params := make([]interface{}, 0)
+	conditions := make([]bson.E, 0)
 
 	if c.QueryParam("priceRangeId") != "" {
 		chairPrice, err := getRange(chairSearchCondition.Price, c.QueryParam("priceRangeId"))
@@ -427,12 +426,10 @@ func searchChairs(c echo.Context) error {
 		}
 
 		if chairPrice.Min != -1 {
-			conditions = append(conditions, "price >= ?")
-			params = append(params, chairPrice.Min)
+			conditions = append(conditions, bson.E{"price", bson.M{"$gte": chairPrice.Min}})
 		}
 		if chairPrice.Max != -1 {
-			conditions = append(conditions, "price < ?")
-			params = append(params, chairPrice.Max)
+			conditions = append(conditions, bson.E{"price", bson.M{"$lt": chairPrice.Max}})
 		}
 	}
 
@@ -444,12 +441,10 @@ func searchChairs(c echo.Context) error {
 		}
 
 		if chairHeight.Min != -1 {
-			conditions = append(conditions, "height >= ?")
-			params = append(params, chairHeight.Min)
+			conditions = append(conditions, bson.E{"height", bson.M{"$gte": chairHeight.Min}})
 		}
 		if chairHeight.Max != -1 {
-			conditions = append(conditions, "height < ?")
-			params = append(params, chairHeight.Max)
+			conditions = append(conditions, bson.E{"height", bson.M{"$lt": chairHeight.Max}})
 		}
 	}
 
@@ -461,12 +456,10 @@ func searchChairs(c echo.Context) error {
 		}
 
 		if chairWidth.Min != -1 {
-			conditions = append(conditions, "width >= ?")
-			params = append(params, chairWidth.Min)
+			conditions = append(conditions, bson.E{"width", bson.M{"$gte": chairWidth.Min}})
 		}
 		if chairWidth.Max != -1 {
-			conditions = append(conditions, "width < ?")
-			params = append(params, chairWidth.Max)
+			conditions = append(conditions, bson.E{"width", bson.M{"$lt": chairWidth.Max}})
 		}
 	}
 
@@ -478,29 +471,25 @@ func searchChairs(c echo.Context) error {
 		}
 
 		if chairDepth.Min != -1 {
-			conditions = append(conditions, "depth >= ?")
-			params = append(params, chairDepth.Min)
+			conditions = append(conditions, bson.E{"depth", bson.M{"$gte": chairDepth.Min}})
 		}
 		if chairDepth.Max != -1 {
-			conditions = append(conditions, "depth < ?")
-			params = append(params, chairDepth.Max)
+			conditions = append(conditions, bson.E{"depth", bson.M{"$lt": chairDepth.Max}})
 		}
 	}
 
 	if c.QueryParam("kind") != "" {
-		conditions = append(conditions, "kind = ?")
-		params = append(params, c.QueryParam("kind"))
+		conditions = append(conditions, bson.E{"kind", bson.M{"$eq": c.QueryParam("kind")}})
 	}
 
 	if c.QueryParam("color") != "" {
-		conditions = append(conditions, "color = ?")
-		params = append(params, c.QueryParam("color"))
+		conditions = append(conditions, bson.E{"color", bson.M{"$eq": c.QueryParam("color")}})
 	}
 
 	if c.QueryParam("features") != "" {
 		for _, f := range strings.Split(c.QueryParam("features"), ",") {
-			conditions = append(conditions, "features LIKE CONCAT('%', ?, '%')")
-			params = append(params, f)
+			regPattern := ".*" + f + ".*"
+			conditions = append(conditions, bson.E{"features", bson.M{"$regex": regPattern}})
 		}
 	}
 
@@ -509,7 +498,7 @@ func searchChairs(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	conditions = append(conditions, "stock > 0")
+	conditions = append(conditions, bson.E{"stock", bson.M{"$gt": 0}})
 
 	page, err := strconv.Atoi(c.QueryParam("page"))
 	if err != nil {
@@ -523,27 +512,38 @@ func searchChairs(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	searchQuery := "SELECT * FROM chair WHERE "
-	countQuery := "SELECT COUNT(*) FROM chair WHERE "
-	searchCondition := strings.Join(conditions, " AND ")
-	limitOffset := " ORDER BY popularity DESC, id ASC LIMIT ? OFFSET ?"
+	var searchQuery bson.D
+	for _, v := range conditions {
+		searchQuery = append(searchQuery, v)
+	}
 
 	var res ChairSearchResponse
-	err = db.Get(&res.Count, countQuery+searchCondition, params...)
+	res.Count, err = mongodb.Collection("chair").CountDocuments(context.Background(), searchQuery)
 	if err != nil {
 		c.Logger().Errorf("searchChairs DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	chairs := []Chair{}
-	params = append(params, perPage, page*perPage)
-	err = db.Select(&chairs, searchQuery+searchCondition+limitOffset, params...)
+	findOptions := options.Find().SetSort(bson.D{{"popularity", -1}, {"_id", 1}}).SetLimit(int64(perPage)).SetSkip(int64(page * perPage))
+	cur, err := mongodb.Collection("chair").Find(context.Background(), searchQuery, findOptions)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			return c.JSON(http.StatusOK, ChairSearchResponse{Count: 0, Chairs: []Chair{}})
 		}
 		c.Logger().Errorf("searchChairs DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for cur.Next(context.Background()) {
+		var chair Chair
+		err := cur.Decode(&chair)
+		if err != nil {
+			c.Logger().Errorf("searchChairs DB decode error : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		chairs = append(chairs, chair)
 	}
 
 	res.Chairs = chairs
