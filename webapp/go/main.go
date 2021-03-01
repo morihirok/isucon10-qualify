@@ -725,8 +725,7 @@ func postEstate(c echo.Context) error {
 }
 
 func searchEstates(c echo.Context) error {
-	conditions := make([]string, 0)
-	params := make([]interface{}, 0)
+	conditions := make([]bson.E, 0)
 
 	if c.QueryParam("doorHeightRangeId") != "" {
 		doorHeight, err := getRange(estateSearchCondition.DoorHeight, c.QueryParam("doorHeightRangeId"))
@@ -736,12 +735,10 @@ func searchEstates(c echo.Context) error {
 		}
 
 		if doorHeight.Min != -1 {
-			conditions = append(conditions, "door_height >= ?")
-			params = append(params, doorHeight.Min)
+			conditions = append(conditions, bson.E{"door_height", bson.M{"$gte": doorHeight.Min}})
 		}
 		if doorHeight.Max != -1 {
-			conditions = append(conditions, "door_height < ?")
-			params = append(params, doorHeight.Max)
+			conditions = append(conditions, bson.E{"door_height", bson.M{"$lt": doorHeight.Max}})
 		}
 	}
 
@@ -753,12 +750,10 @@ func searchEstates(c echo.Context) error {
 		}
 
 		if doorWidth.Min != -1 {
-			conditions = append(conditions, "door_width >= ?")
-			params = append(params, doorWidth.Min)
+			conditions = append(conditions, bson.E{"door_width", bson.M{"$gte": doorWidth.Min}})
 		}
 		if doorWidth.Max != -1 {
-			conditions = append(conditions, "door_width < ?")
-			params = append(params, doorWidth.Max)
+			conditions = append(conditions, bson.E{"door_height", bson.M{"$lt": doorWidth.Max}})
 		}
 	}
 
@@ -770,19 +765,17 @@ func searchEstates(c echo.Context) error {
 		}
 
 		if estateRent.Min != -1 {
-			conditions = append(conditions, "rent >= ?")
-			params = append(params, estateRent.Min)
+			conditions = append(conditions, bson.E{"rent", bson.M{"$gte": estateRent.Min}})
 		}
 		if estateRent.Max != -1 {
-			conditions = append(conditions, "rent < ?")
-			params = append(params, estateRent.Max)
+			conditions = append(conditions, bson.E{"rent", bson.M{"$lt": estateRent.Max}})
 		}
 	}
 
 	if c.QueryParam("features") != "" {
 		for _, f := range strings.Split(c.QueryParam("features"), ",") {
-			conditions = append(conditions, "features like concat('%', ?, '%')")
-			params = append(params, f)
+			regPattern := ".*" + f + ".*"
+			conditions = append(conditions, bson.E{"features", bson.M{"$regex": regPattern}})
 		}
 	}
 
@@ -803,27 +796,38 @@ func searchEstates(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	searchQuery := "SELECT * FROM estate WHERE "
-	countQuery := "SELECT COUNT(*) FROM estate WHERE "
-	searchCondition := strings.Join(conditions, " AND ")
-	limitOffset := " ORDER BY popularity DESC, id ASC LIMIT ? OFFSET ?"
+	var searchQuery bson.D
+	for _, v := range conditions {
+		searchQuery = append(searchQuery, v)
+	}
 
 	var res EstateSearchResponse
-	err = db.Get(&res.Count, countQuery+searchCondition, params...)
+	res.Count, err = mongodb.Collection("estate").CountDocuments(context.Background(), searchQuery)
 	if err != nil {
 		c.Logger().Errorf("searchEstates DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	estates := []Estate{}
-	params = append(params, perPage, page*perPage)
-	err = db.Select(&estates, searchQuery+searchCondition+limitOffset, params...)
+	findOptions := options.Find().SetSort(bson.D{{"popularity", -1}, {"_id", 1}}).SetLimit(int64(perPage)).SetSkip(int64(page * perPage))
+	cur, err := mongodb.Collection("estate").Find(context.Background(), searchQuery, findOptions)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			return c.JSON(http.StatusOK, EstateSearchResponse{Count: 0, Estates: []Estate{}})
 		}
 		c.Logger().Errorf("searchEstates DB execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for cur.Next(context.Background()) {
+		var estate Estate
+		err := cur.Decode(&estate)
+		if err != nil {
+			c.Logger().Errorf("searchChairs DB decode error : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		estates = append(estates, estate)
 	}
 
 	res.Estates = estates
