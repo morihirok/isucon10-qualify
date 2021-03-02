@@ -950,14 +950,31 @@ func searchEstateNazotte(c echo.Context) error {
 
 	b := coordinates.getBoundingBox()
 	estatesInBoundingBox := []Estate{}
-	query := `SELECT * FROM estate WHERE latitude <= ? AND latitude >= ? AND longitude <= ? AND longitude >= ? ORDER BY popularity DESC, id ASC`
-	err = db.Select(&estatesInBoundingBox, query, b.BottomRightCorner.Latitude, b.TopLeftCorner.Latitude, b.BottomRightCorner.Longitude, b.TopLeftCorner.Longitude)
-	if err == sql.ErrNoRows {
-		c.Echo().Logger.Infof("select * from estate where latitude ...", err)
+	query := bson.D{
+		{"latitude", bson.M{"$lte": b.BottomRightCorner.Latitude}},
+		{"latitude", bson.M{"$gte": b.TopLeftCorner.Latitude}},
+		{"longitude", bson.M{"$lte": b.BottomRightCorner.Longitude}},
+		{"longitude", bson.M{"$gte": b.TopLeftCorner.Longitude}},
+	}
+	findOptions := options.Find().SetSort(bson.D{{"popularity", -1}, {"_id", 1}})
+	cur, err := mongodb.Collection("estate").Find(context.Background(), query, findOptions)
+	if err == mongo.ErrNoDocuments {
+		c.Echo().Logger.Infof("db.estate.find({latitude: {$gte: ...}, ...})", err)
 		return c.JSON(http.StatusOK, EstateSearchResponse{Count: 0, Estates: []Estate{}})
 	} else if err != nil {
 		c.Echo().Logger.Errorf("database execution error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	for cur.Next(context.Background()) {
+		var estate Estate
+		err := cur.Decode(&estate)
+		if err != nil {
+			c.Logger().Errorf("searchEstateNazotte DB decode error : %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		estatesInBoundingBox = append(estatesInBoundingBox, estate)
 	}
 
 	estatesInPolygon := []Estate{}
